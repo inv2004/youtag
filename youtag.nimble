@@ -5,7 +5,7 @@ author        = "inv2004"
 description   = "A new awesome nimble package"
 license       = "Proprietary"
 srcDir        = "src"
-bin           = @["facetag", "dump"]
+bin           = @["youtag", "dump"]
 
 
 # Dependencies

@@ -1,4 +1,5 @@
 import storage
 
 let db = newDB()
-db.dump()
+db.dump("users")
+db.dump("tags")

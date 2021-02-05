@@ -20,7 +20,7 @@ let BOT_COMMANDS = @[
 ]
 
 type
-  Facetag = object
+  Bot = object
     db: DB
     cache: TableRef[int, Message]
 
@@ -28,11 +28,11 @@ proc tags(x: string): seq[string] =
   for t in unicode.split(x, spacesRunes):
     result.add unicode.strip(t, true, true, stripRunes)
 
-proc `from`(m: Message): (bool, string) =
+proc `from`(m: Message): (bool, storage.User) =
   if m.forwardDate.isSome:
     if m.forwardFrom.isSome:
-      if m.forwardFrom.get.username.isSome:
-        return (true, m.forwardFrom.get.username.get)
+      let user = storage.User(id: m.forwardFrom.get.id, username: m.forwardFrom.get.username)
+      return (true, user)
     raise newException(ValueError, "The user is protected by her(his) privacy settings")
 
 proc reply(b: TeleBot, orig: Message, msg: string) {.async.} =
@@ -50,15 +50,18 @@ proc reply(b: TeleBot, orig: Message, msg: string) {.async.} =
                         replyToMessageId = orig.messageId
                         )
 
-proc processCmd(ft: Facetag, user, cmd: string): string =
+proc processCmd(ft: Bot, user: storage.User, cmd: string): string =
   case cmd:
-  of "/start": return """YouTag   -   Tag the World!
+  of "/start":
+    ft.db.setUser(user)
+    return """YouTag   -   Tag the World!
   
 Hello,
-The bot helps to collect anonymous feedbacks across the internet and classify users
+  The bot helps to collect anonymous feedbacks across the internet and classify users
 
-*Forward* message from any user and *add* space or comma separated *tags* in text
-The user can check his tags without information about setter
+*Forward* message from any user and *add* space or comma separated *tags* in text.
+
+The user can check his tags without information about setter.
 
 Tag length is from 4 to 25 characters.
 
@@ -76,21 +79,24 @@ Use /help for help
   /top @[user] - top tag's for the user
 
 """
-  of "/me": return ft.db.me(user)
-  of "/my": return ft.db.my(user)
+  of "/me": return ft.db.me(user.id)
+  of "/my": return ft.db.my(user.id)
   of "/stop": return "stopped"
   elif cmd.startsWith("/top"):
     return "This command is temporary disabled due to the toxicity of IT community"
   else:
     return "Unknown command, check /help please"
 
-proc showTopButtons(b: Telebot, ft: Facetag, orig: Message, msg: string, user: string): Future[Message] {.async.} =
-  let setter = orig.fromUser.get().username.get()
+proc showTopButtons(b: Telebot, ft: Bot, orig: Message, msg: string, userID: int): Future[Message] {.async.} =
+  if orig.fromUser.isNone:
+    raise newException(ValueError, "fromUser")
+
+  let setter = orig.fromUser.get().id
 
   var btns = newSeq[seq[InlineKeyboardButton]](2)
   for i, tt in ft.db.topTags():
     var b = initInlineKeyBoardButton(tt)
-    b.callbackData = some(@["set",setter,user,tt].join(":"))
+    b.callbackData = some(@["set",$setter,$userID,tt].join(":"))
     btns[int(i / BTNS_ROW_SIZE)].add b
 
   let replyMarkup = newInlineKeyboardMarkup(btns)
@@ -100,52 +106,54 @@ proc hideButtons(b: Telebot, orig: Message, msg: string) {.async.} =
   let markup = newInlineKeyboardMarkup()
   discard await b.editMessageText(msg, $orig.chat.id, orig.messageId, replyMarkup = markup)
 
-proc processMsg(b: Telebot, ft: Facetag, msg: Message) {.async.} =
-  let userID = msg.fromUser.get().id
-  let user = msg.fromUser.get().username.get()
+proc processMsg(b: Telebot, ft: Bot, msg: Message) {.async.} =
+  let user = storage.User(id: msg.fromUser.get().id, username: msg.fromUser.get().username)
+  debug "User: ", user
 
   let text = msg.text.get("")
   if text.startsWith("/") and msg.forwardDate.isNone:
     await b.reply(msg, processCmd(ft, user, text))
-    ft.cache.del(userID)
+    ft.cache.del(user.id)
   else:
-    if ft.cache.hasKey(userID):
-      debug "has cache for ", userID
-      let prev = ft.cache[userID]
+    if ft.cache.hasKey(user.id):
+      debug "has cache for ", user.id
+      let prev = ft.cache[user.id]
       let (isPrevFrom, prevFrom) = `from`(prev)
       let (isCurFrom, curFrom) = `from`(msg)
       if isCurFrom and not isPrevFrom:
         debug "prev text"
         let t = tags(prev.text.get)
-        ft.db.set(user, curFrom, t)
-        ft.cache[userID] = msg
-        let btns = await showTopButtons(b, ft, msg, "You can add more tags or use the buttons while you see the msg", curFrom)
+        ft.db.setTag(user.id, curFrom, t)
+        ft.cache[user.id] = msg
+        let btns = await showTopButtons(b, ft, msg, "You can add more tags manually or with the following buttons:", curFrom.id)
         await sleepAsync(BTNS_TIMEOUT)
         await hideButtons(b, btns, "Done")
+        ft.cache.del(user.id)
       elif (not isCurFrom) and isPrevFrom:
         debug "current text"
         let t = tags(text)
-        ft.db.set(user, prevFrom, t)
-        let btns = await showTopButtons(b, ft, msg, "You can add more tags or use the buttons while you see the msg", curFrom)
+        ft.db.setTag(user.id, prevFrom, t)
+        let btns = await showTopButtons(b, ft, msg, "You can add more tags manually or with the following buttons:", curFrom.id)
         await sleepAsync(BTNS_TIMEOUT)
         await hideButtons(b, btns, "Done")
+        ft.cache.del(user.id)
       else:
-        debug "brr"
+        error "brr"
     else:
-      debug "no cache for ", userID
-      ft.cache[userID] = msg
+      debug "no cache for ", user.id
+      ft.cache[user.id] = msg
       let (isCurFrom, curFrom) = `from`(msg)
       if isCurFrom:
-        let btns = await showTopButtons(b, ft, msg, "Enter space or comma separated tags manually or use the buttons:", curFrom)
+        let btns = await showTopButtons(b, ft, msg, "Enter space or comma separated tags manually or add via the buttons:", curFrom.id)
         await sleepAsync(BTNS_TIMEOUT)
         await hideButtons(b, btns, "Done")
-        ft.cache.del(userID)
+        ft.cache.del(user.id)
 
 proc main() =
   addHandler(newConsoleLogger(fmtStr=verboseFmtStr))
   setLogFilter(lvlDebug)
 
-  let ft = Facetag(cache: newTable[int, Message](), db: newDB())
+  let ft = Bot(cache: newTable[int, Message](), db: newDB())
   defer: ft.db.close()
 
   let bot = newTeleBot(API_KEY)
@@ -166,7 +174,8 @@ proc main() =
       let fs = data.split(":")
 
       if fs[0] == "set":
-        ft.db.set(fs[1], fs[2], @[fs[3]])
+        let user = storage.User(id:fs[2].parseInt(), username:none(string))
+        ft.db.setTag(fs[1].parseInt(), user, @[fs[3]])
         for x in markup.inlineKeyboard.mitems:
           x.keepItIf(it.callbackData.get != data)
         discard await b.editMessageReplyMarkup($msg.chat.id, msg.messageId, "", markup)
