@@ -183,7 +183,7 @@ proc main() =
 
       return false
     if not u.message.isSome:
-      debug "ups"
+      warn "not a message"
       return false
     let msg = u.message.get
     try:
