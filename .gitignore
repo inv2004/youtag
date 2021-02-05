@@ -1,3 +1,5 @@
 src/telegram.key
 *.exe
-db
+/db
+/youtag
+/dump
