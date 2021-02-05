@@ -1,1 +1,3 @@
 src/telegram.key
+*.exe
+db

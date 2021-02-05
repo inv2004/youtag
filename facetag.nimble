@@ -5,11 +5,11 @@ author        = "inv2004"
 description   = "A new awesome nimble package"
 license       = "Proprietary"
 srcDir        = "src"
-bin           = @["facetag"]
+bin           = @["facetag", "dump"]
 
 
 # Dependencies
 
 requires "nim >= 1.4.2"
 requires "telebot"
-requires "leveldb"
+requires "terminaltables"
