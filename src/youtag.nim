@@ -151,6 +151,7 @@ proc processMsg(b: Telebot, ft: Bot, msg: Message) {.async.} =
 
 proc main() =
   addHandler(newConsoleLogger(fmtStr=verboseFmtStr))
+  addHandler(newRollingFileLogger(fmtStr=verboseFmtStr, maxlines=100000))
   setLogFilter(lvlDebug)
 
   let ft = Bot(cache: newTable[int, Message](), db: newDB())
