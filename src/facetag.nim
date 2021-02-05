@@ -12,6 +12,13 @@ const API_KEY = slurp("telegram.key")
 const BTNS_TIMEOUT = 30 * 1000
 const BTNS_ROW_SIZE = 5
 
+let BOT_COMMANDS = @[
+  BotCommand(command: "help", description: "usage"),
+  BotCommand(command: "me", description: "tags on me"),
+  BotCommand(command: "my", description: "my tags"),
+  BotCommand(command: "top", description: "top tags/users")
+]
+
 type
   Facetag = object
     db: DB
@@ -31,32 +38,51 @@ proc `from`(m: Message): (bool, string) =
 proc reply(b: TeleBot, orig: Message, msg: string) {.async.} =
   let mode = if msg.startsWith("<pre>"): "html" else: "markdown"
 
-  discard await b.sendMessage(orig.chat.id, msg,
+  let m =
+    if msg.len > 4000:
+      msg[0..3990] & "..."
+    else:
+      msg
+
+  discard await b.sendMessage(orig.chat.id, m,
                         parseMode = mode,
                         disableNotification = true,
                         replyToMessageId = orig.messageId
                         )
 
-
-
-proc processCmd(cmd: string): string =
+proc processCmd(ft: Facetag, user, cmd: string): string =
   case cmd:
-  of "/start": return """Hello,
-Please forward message from any user and add tags delimited by space or comma.
-Tags length from 3 to 25 characters.
+  of "/start": return """YouTag   -   Tag the World!
+  
+Hello,
+The bot helps to collect anonymous feedbacks across the internet and classify users
+
+*Forward* message from any user and *add* space or comma separated *tags* in text
+The user can check his tags without information about setter
+
+Tag length is from 4 to 25 characters.
+
+Use /help for help
+
 """
   of "/help": return """
-  Forward any users's message and tag the user with your own tags
+  Forward message from any user and add space- or comma-separated tags in text.
 
-  /top #[tag] - top user's with the tag
+  /help        - usage
+  /me          - show tags you marked with
+  /my          - show tags set by you
+  /top         - top tags and users
+  /top #[tag]  - top user's with the tag
   /top @[user] - top tag's for the user
-  /me - show tags you marked with
-  /my - show tags set by you
-usage
+
 """
+  of "/me": return ft.db.me(user)
+  of "/my": return ft.db.my(user)
   of "/stop": return "stopped"
-  of "/top": return "This option is hidden due to the toxicity of the IT community"
-  else: return "Unknown command"
+  elif cmd.startsWith("/top"):
+    return "This command is temporary disabled due to the toxicity of IT community"
+  else:
+    return "Unknown command, check /help please"
 
 proc showTopButtons(b: Telebot, ft: Facetag, orig: Message, msg: string, user: string): Future[Message] {.async.} =
   let setter = orig.fromUser.get().username.get()
@@ -73,25 +99,14 @@ proc showTopButtons(b: Telebot, ft: Facetag, orig: Message, msg: string, user: s
 proc hideButtons(b: Telebot, orig: Message, msg: string) {.async.} =
   let markup = newInlineKeyboardMarkup()
   discard await b.editMessageText(msg, $orig.chat.id, orig.messageId, replyMarkup = markup)
-  # discard await b.editMessageReplyMarkup($orig.chat.id, orig.messageId, "", markup)
 
 proc processMsg(b: Telebot, ft: Facetag, msg: Message) {.async.} =
   let userID = msg.fromUser.get().id
   let user = msg.fromUser.get().username.get()
 
   let text = msg.text.get("")
-  if text == "/me" and msg.forwardDate.isNone:
-    await b.reply(msg, ft.db.stat(user))
-    ft.cache.del(userID)
-  elif text == "/my" and msg.forwardDate.isNone:
-    echo ft.db.my(user)
-    await b.reply(msg, ft.db.my(user))
-    ft.cache.del(userID)
-  elif text.startsWith("/top ") and msg.forwardDate.isNone:
-    await b.reply(msg, "This option is hidden due to the toxicity of the IT community")
-    ft.cache.del(userID)
-  elif text.startsWith("/") and msg.forwardDate.isNone:
-    await b.reply(msg, processCmd(text))
+  if text.startsWith("/") and msg.forwardDate.isNone:
+    await b.reply(msg, processCmd(ft, user, text))
     ft.cache.del(userID)
   else:
     if ft.cache.hasKey(userID):
@@ -104,16 +119,14 @@ proc processMsg(b: Telebot, ft: Facetag, msg: Message) {.async.} =
         let t = tags(prev.text.get)
         ft.db.set(user, curFrom, t)
         ft.cache[userID] = msg
-        # ft.cache.del(userID)
-        let btns = await showTopButtons(b, ft, msg, "Done. You can add more tags or use the buttons", curFrom)
+        let btns = await showTopButtons(b, ft, msg, "You can add more tags or use the buttons while you see the msg", curFrom)
         await sleepAsync(BTNS_TIMEOUT)
         await hideButtons(b, btns, "Done")
       elif (not isCurFrom) and isPrevFrom:
         debug "current text"
         let t = tags(text)
         ft.db.set(user, prevFrom, t)
-        # ft.cache.del(userID)
-        let btns = await showTopButtons(b, ft, msg, "Done. You can add more tags or use the buttons", curFrom)
+        let btns = await showTopButtons(b, ft, msg, "You can add more tags or use the buttons while you see the msg", curFrom)
         await sleepAsync(BTNS_TIMEOUT)
         await hideButtons(b, btns, "Done")
       else:
@@ -123,11 +136,10 @@ proc processMsg(b: Telebot, ft: Facetag, msg: Message) {.async.} =
       ft.cache[userID] = msg
       let (isCurFrom, curFrom) = `from`(msg)
       if isCurFrom:
-        let btns = await showTopButtons(b, ft, msg, "Enter tags manually or use tags buttons:", curFrom)
+        let btns = await showTopButtons(b, ft, msg, "Enter space or comma separated tags manually or use the buttons:", curFrom)
         await sleepAsync(BTNS_TIMEOUT)
         await hideButtons(b, btns, "Done")
-      # await sleepAsync(60 * 1000)
-      # ft.cache.del(userID)
+        ft.cache.del(userID)
 
 proc main() =
   addHandler(newConsoleLogger(fmtStr=verboseFmtStr))
@@ -169,6 +181,10 @@ proc main() =
     except:
       error getCurrentExceptionMsg()
       await b.reply(msg, getCurrentExceptionMsg().split("\n")[0])
+
+  info("set commands")
+
+  doAssert waitFor bot.setMyCommands(BOT_COMMANDS)
 
   info("started")
 

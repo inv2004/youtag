@@ -5,7 +5,7 @@ import terminaltables
 
 const FILE = "db/db.db"
 const DB_NAME = "facetag"
-const TAG_LOW = 3
+const TAG_LOW = 4
 const TAG_HIGH = 25
 
 const INIT_SQL = sql"""
@@ -43,7 +43,7 @@ proc set*(self; setter, user: string, tags: seq[string]) =
     except DbError:
       warn "set failed: ", getCurrentExceptionMsg()
 
-proc stat*(self; user: string): string =
+proc me*(self; user: string): string =
   let t = newUnicodeTable()
   t.setHeaders @["tag", "count"]
   for row in self.db.rows(sql"SELECT tag, COUNT(1) FROM tags WHERE user = ? GROUP BY tag", user):
