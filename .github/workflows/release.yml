@@ -1,0 +1,28 @@
+name: Release
+
+on: [push]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v2
+      - name: Cache nimble
+        id: cache-nimble
+        uses: actions/cache@v2
+        with:
+          path: ~/.nimble
+          key: ${{ runner.os }}-nimble-${{ matrix.nim }}
+        if: runner.os != 'Windows'
+      - uses: jiro4989/setup-nim-action@v1
+      # - run: nimble test -y
+      - run: nimble -d:release -y build
+      - uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.HOST_USER }}
+          passphrase: ${{ secrets.HOST_PP }}
+          key: ${{ secrets.HOST_KEY }}
+          source: "youtag"
+          target: "youtag"
