@@ -6,6 +6,7 @@ import sequtils
 import tables
 import unicode
 import uchars
+import locale
 
 const API_KEY = slurp("telegram.key")
 
@@ -20,20 +21,22 @@ let BOT_COMMANDS = @[
 ]
 
 type
+  ProtectedUserError = object of ValueError
+
   Bot = object
     db: DB
     cache: TableRef[int, Message]
 
-proc tags(x: string): seq[string] =
-  for t in unicode.split(x, spacesRunes):
-    result.add unicode.strip(t, true, true, stripRunes)
-
-proc `from`(m: Message): (bool, storage.User) =
-  if m.forwardDate.isSome:
-    if m.forwardFrom.isSome:
-      let user = storage.User(id: m.forwardFrom.get.id, username: m.forwardFrom.get.username)
+proc `from`(msg: Message): (bool, storage.User) =
+  if msg.forwardDate.isSome:
+    if msg.forwardFrom.isSome:
+      let user = storage.User(
+        id: msg.forwardFrom.get.id,
+        username: msg.forwardFrom.get.username,
+        locale: msg.fromUser.get().languageCode.get("ru").parseEnum(Ru)
+      )
       return (true, user)
-    raise newException(ValueError, "The user is protected by her(his) privacy settings")
+    raise newException(ProtectedUserError, "protected user")
 
 proc reply(b: TeleBot, orig: Message, msg: string) {.async.} =
   let mode = if msg.startsWith("<pre>"): "html" else: "markdown"
@@ -50,42 +53,39 @@ proc reply(b: TeleBot, orig: Message, msg: string) {.async.} =
                         replyToMessageId = orig.messageId
                         )
 
-proc processCmd(ft: Bot, user: storage.User, cmd: string): string =
+proc tags(b: TeleBot, orig: Message, user: storage.User, x: string): Future[seq[string]] {.async.} =
+  var errTags: seq[string]
+
+  for t in unicode.split(x, spacesRunes):
+    let tag = unicode.strip(t, true, true, stripRunes)
+    let len = tag.runeLen()
+    if len == 0:
+      continue
+    if len in TAG_RUNES:
+      result.add tag
+    else:
+      errTags.add tag
+
+  if errTags.len > 0:
+    await b.reply(orig, wrong[user.locale] & errTags.join(", "))
+
+proc checkOnStart(b: TeleBot, ft: Bot, orig: Message, user: storage.User) {.async.} =
+  if ft.db.checkMe(user.id):
+    await b.reply(orig, found[user.locale])
+
+proc processCmd(b: TeleBot, ft: Bot, orig: Message, user: storage.User, cmd: string) {.async.} =
   case cmd:
   of "/start":
     ft.db.setUser(user)
-    return """YouTag   -   Tag the World!
-  
-Hello,
-  The bot helps to collect anonymous feedbacks across the internet and classify users
+    await b.reply(orig, locale.title & "\n\n" & hello[user.locale])
 
-*Forward* message from any user and *add* space or comma separated *tags* in text.
-
-The user can check his tags without information about setter.
-
-Tag length is from 4 to 25 characters.
-
-Use /help for help
-
-"""
-  of "/help": return """
-  Forward message from any user and add space- or comma-separated tags in text.
-
-  /help        - usage
-  /me          - show tags you marked with
-  /my          - show tags set by you
-  /top         - top tags and users
-  /top #[tag]  - top user's with the tag
-  /top @[user] - top tag's for the user
-
-"""
-  of "/me": return ft.db.me(user.id)
-  of "/my": return ft.db.my(user.id)
-  of "/stop": return "stopped"
-  elif cmd.startsWith("/top"):
-    return "This command is temporary disabled due to the toxicity of IT community"
-  else:
-    return "Unknown command, check /help please"
+    await checkOnStart(b, ft, orig, user)
+  of "/help": await b.reply(orig, help[user.locale])
+  of "/me": await b.reply(orig, ft.db.me(user.id))
+  of "/my": await b.reply(orig, ft.db.my(user.id))
+  of "/stop": await b.reply(orig, stopped[user.locale])
+  elif cmd.startsWith("/top"): await b.reply(orig, top[user.locale])
+  else: await b.reply(orig, unknown[user.locale])
 
 proc showTopButtons(b: Telebot, ft: Bot, orig: Message, msg: string, userID: int): Future[Message] {.async.} =
   if orig.fromUser.isNone:
@@ -95,7 +95,7 @@ proc showTopButtons(b: Telebot, ft: Bot, orig: Message, msg: string, userID: int
 
   var btns = newSeq[seq[InlineKeyboardButton]](2)
   for i, tt in ft.db.topTags():
-    var b = initInlineKeyBoardButton(tt)
+    var b = initInlineKeyBoardButton($(i+1) & ". " & tt)
     b.callbackData = some(@["set",$setter,$userID,tt].join(":"))
     btns[int(i / BTNS_ROW_SIZE)].add b
 
@@ -106,13 +106,10 @@ proc hideButtons(b: Telebot, orig: Message, msg: string) {.async.} =
   let markup = newInlineKeyboardMarkup()
   discard await b.editMessageText(msg, $orig.chat.id, orig.messageId, replyMarkup = markup)
 
-proc processMsg(b: Telebot, ft: Bot, msg: Message) {.async.} =
-  let user = storage.User(id: msg.fromUser.get().id, username: msg.fromUser.get().username)
-  debug "User: ", user
-
+proc processMsg(b: Telebot, ft: Bot, user: storage.User, msg: Message) {.async.} =
   let text = msg.text.get("")
   if text.startsWith("/") and msg.forwardDate.isNone:
-    await b.reply(msg, processCmd(ft, user, text))
+    await b.processCmd(ft, msg, user, text)
     ft.cache.del(user.id)
   else:
     if ft.cache.hasKey(user.id):
@@ -122,20 +119,20 @@ proc processMsg(b: Telebot, ft: Bot, msg: Message) {.async.} =
       let (isCurFrom, curFrom) = `from`(msg)
       if isCurFrom and not isPrevFrom:
         debug "prev text"
-        let t = tags(prev.text.get)
+        let t = await tags(b, msg, user, prev.text.get)
         ft.db.setTag(user.id, curFrom, t)
         ft.cache[user.id] = msg
-        let btns = await showTopButtons(b, ft, msg, "You can add more tags manually or with the following buttons:", curFrom.id)
+        let btns = await showTopButtons(b, ft, msg, tag[user.locale], curFrom.id)
         await sleepAsync(BTNS_TIMEOUT)
-        await hideButtons(b, btns, "Done")
+        await hideButtons(b, btns, done[user.locale])
         ft.cache.del(user.id)
       elif (not isCurFrom) and isPrevFrom:
         debug "current text"
-        let t = tags(text)
+        let t = await tags(b, msg, user, text)
         ft.db.setTag(user.id, prevFrom, t)
-        let btns = await showTopButtons(b, ft, msg, "You can add more tags manually or with the following buttons:", curFrom.id)
+        let btns = await showTopButtons(b, ft, msg, tag[user.locale], curFrom.id)
         await sleepAsync(BTNS_TIMEOUT)
-        await hideButtons(b, btns, "Done")
+        await hideButtons(b, btns, done[user.locale])
         ft.cache.del(user.id)
       else:
         error "brr"
@@ -144,9 +141,9 @@ proc processMsg(b: Telebot, ft: Bot, msg: Message) {.async.} =
       ft.cache[user.id] = msg
       let (isCurFrom, curFrom) = `from`(msg)
       if isCurFrom:
-        let btns = await showTopButtons(b, ft, msg, "Enter space or comma separated tags manually or add via the buttons:", curFrom.id)
+        let btns = await showTopButtons(b, ft, msg, tag[user.locale], curFrom.id)
         await sleepAsync(BTNS_TIMEOUT)
-        await hideButtons(b, btns, "Done")
+        await hideButtons(b, btns, done[user.locale])
         ft.cache.del(user.id)
 
 proc main() =
@@ -186,8 +183,18 @@ proc main() =
       warn "not a message"
       return false
     let msg = u.message.get
+    let user = storage.User(
+      id: msg.fromUser.get().id,
+      username: msg.fromUser.get().username,
+      locale: msg.fromUser.get().languageCode.get("ru").parseEnum(Ru)
+    )
+    debug "User: ", user
+
     try:
-      await processMsg(b, ft, msg)
+      await processMsg(b, ft, user, msg)
+    except ProtectedUserError:
+      warn getCurrentExceptionMsg()
+      await b.reply(msg, protected[user.locale])
     except:
       error getCurrentExceptionMsg()
       await b.reply(msg, getCurrentExceptionMsg().split("\n")[0])

@@ -3,6 +3,8 @@ import os
 import logging
 import terminaltables
 import options
+import strutils
+import locale
 
 const FILE = "db/db.db"
 const DB_NAME = "youtag"
@@ -22,12 +24,13 @@ const INIT_TBL_2 = sql"""
   CREATE TABLE IF NOT EXISTS users (
     id INT,
     username TEXT,
+    locale TEXT,
     active BOOLEAN,
     PRIMARY KEY(id, username)
   )
 """
 
-const INSERT_USER_SQL = sql"INSERT INTO users (id, username, active) VALUES(?,?,1)"
+const INSERT_USER_SQL = sql"INSERT INTO users (id, username, locale, active) VALUES(?,?,?,1)"
 const INSERT_TAG_SQL = sql"INSERT INTO tags (setter, user, tag) VALUES(?,?,?)"
 
 type
@@ -37,6 +40,7 @@ type
   User* = object
     id*: int
     username*: Option[string]
+    locale*: Locale
 
 using
   self: DB
@@ -52,9 +56,11 @@ proc newDB*(): DB =
 proc setUser*(self; user: User) =
   if user.username.isSome:
     try:
-      discard self.db.insertID(INSERT_USER_SQL, user.id, user.username.get)
+      discard self.db.insertID(INSERT_USER_SQL, user.id, user.username.get, user.locale)
     except DbError:
-      warn "set failed: ", getCurrentExceptionMsg()
+      let errMsg = getCurrentExceptionMsg()
+      if not errMsg.startsWith("UNIQUE constraint failed"):
+        error "set failed: ", getCurrentExceptionMsg()
 
 proc setTag*(self; setterID: int, user: User, tags: seq[string]) =
   info "set from ", setterID, ": ", user, ": ", $tags
@@ -68,6 +74,9 @@ proc setTag*(self; setterID: int, user: User, tags: seq[string]) =
       discard self.db.insertID(INSERT_TAG_SQL, setterID, user.id, t)
     except DbError:
       warn "set failed: ", getCurrentExceptionMsg()
+
+proc checkMe*(self; userID: int): bool =
+  0 < parseInt(self.db.getValue(sql"SELECT COUNT(1) FROM tags WHERE user = ?", userID))
 
 proc me*(self; userID: int): string =
   let t = newUnicodeTable()
