@@ -118,3 +118,8 @@ const idUsage* = {
   En: "Use /id command after fowarded message from the user you want to check. or use /id @username",
   Ru: "Используйте команду /id после того, как переслали сообщение от пользователя которого хотите проверить или /id @username"
 }.toTable
+
+const userTagsHelp* = {
+  En: "\\* tags confirmed by someone else marked in bold",
+  Ru: "\\* Теги, подтверждённые кем-то ещё, выделены болдом"
+}.toTable

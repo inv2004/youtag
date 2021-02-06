@@ -74,9 +74,14 @@ proc checkOnStart(b: TeleBot, ft: Bot, orig: Message, user: storage.User) {.asyn
   if ft.db.checkMe(user.id):
     await b.reply(orig, found[user.locale])
 
-proc replyTags(b: Telebot, orig: Message, user: storage.User, userT: seq[string]) {.async.} =
+proc mapTag(x: (string, int)): string =
+  result = x[0]
+  if x[1] > 0:
+    result = "*" & result & "*"
+
+proc replyTags(b: Telebot, orig: Message, user: storage.User, userT: seq[(string, int)]) {.async.} =
     let respT = if userT.len > 0:
-                  tagsForUser[user.locale] & userT.join(", ")
+                  tagsForUser[user.locale] & userT.map(mapTag).join(", ") & "\n\n" & userTagsHelp[user.locale]
                 else:
                   noTagsForUser[user.locale]
     await b.reply(orig, respT)
