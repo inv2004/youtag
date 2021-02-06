@@ -30,4 +30,4 @@ const spacesRunes* = [
     Rune ';'
   ]
 
-const stripRunes* = @spacesRunes & "#_".toRunes()
+const stripRunes* = @spacesRunes & "#_/".toRunes()

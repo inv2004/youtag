@@ -98,6 +98,14 @@ proc my*(self; userID: int): string =
   
   return "<pre>" & result & "</pre>"
 
+proc userTags*(self; userID: int): seq[string] =
+  for row in self.db.rows(sql"SELECT tag FROM tags WHERE user = ?", userID):
+    result.add row[0]
+
+proc userNameTags*(self; userName: string): seq[string] =
+  for row in self.db.rows(sql"SELECT tag FROM tags INNER JOIN users ON users.username = ? WHERE tags.user = users.id", userName):
+    result.add row[0]
+
 proc topTags*(self): seq[string] =
   for row in self.db.rows(sql"SELECT tag, COUNT(1) AS C FROM tags GROUP BY tag ORDER BY C DESC LIMIT 10"):
     result.add row[0]

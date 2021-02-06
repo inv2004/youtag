@@ -17,6 +17,7 @@ let BOT_COMMANDS = @[
   BotCommand(command: "help", description: "usage"),
   BotCommand(command: "me", description: "tags on me"),
   BotCommand(command: "my", description: "my tags"),
+  BotCommand(command: "id", description: "id for user (after message forward)"),
   BotCommand(command: "top", description: "top tags/users")
 ]
 
@@ -73,6 +74,13 @@ proc checkOnStart(b: TeleBot, ft: Bot, orig: Message, user: storage.User) {.asyn
   if ft.db.checkMe(user.id):
     await b.reply(orig, found[user.locale])
 
+proc replyTags(b: Telebot, orig: Message, user: storage.User, userT: seq[string]) {.async.} =
+    let respT = if userT.len > 0:
+                  tagsForUser[user.locale] & userT.join(", ")
+                else:
+                  noTagsForUser[user.locale]
+    await b.reply(orig, respT)
+
 proc processCmd(b: TeleBot, ft: Bot, orig: Message, user: storage.User, cmd: string) {.async.} =
   case cmd:
   of "/start":
@@ -83,8 +91,10 @@ proc processCmd(b: TeleBot, ft: Bot, orig: Message, user: storage.User, cmd: str
   of "/help": await b.reply(orig, help[user.locale])
   of "/me": await b.reply(orig, ft.db.me(user.id))
   of "/my": await b.reply(orig, ft.db.my(user.id))
+  of "/id": await b.reply(orig, idUsage[user.locale])
   of "/stop": await b.reply(orig, stopped[user.locale])
   elif cmd.startsWith("/top"): await b.reply(orig, top[user.locale])
+  elif cmd.startsWith("/id @"): await b.replyTags(orig, user, ft.db.userNameTags(cmd[5..^1]))
   else: await b.reply(orig, unknown[user.locale])
 
 proc showTopButtons(b: Telebot, ft: Bot, orig: Message, msg: string, userID: int): Future[Message] {.async.} =
@@ -106,9 +116,21 @@ proc hideButtons(b: Telebot, orig: Message, msg: string) {.async.} =
   let markup = newInlineKeyboardMarkup()
   discard await b.editMessageText(msg, $orig.chat.id, orig.messageId, replyMarkup = markup)
 
+proc processTag(b: TeleBot, ft: Bot, msg: Message, user, fromUser: storage.User, text: string) {.async.} =
+  if text == "/id":
+    await b.replyTags(msg, user, ft.db.userTags(fromUser.id))
+    ft.cache.del(user.id)
+  else:
+    let t = await tags(b, msg, user, text)
+    ft.db.setTag(user.id, fromUser, t)
+    let btns = await showTopButtons(b, ft, msg, tag[user.locale], fromUser.id)
+    await sleepAsync(BTNS_TIMEOUT)
+    await hideButtons(b, btns, done[user.locale])
+    ft.cache.del(user.id)
+
 proc processMsg(b: Telebot, ft: Bot, user: storage.User, msg: Message) {.async.} =
   let text = msg.text.get("")
-  if text.startsWith("/") and msg.forwardDate.isNone:
+  if text.startsWith("/") and msg.forwardDate.isNone and text != "/id":
     await b.processCmd(ft, msg, user, text)
     ft.cache.del(user.id)
   else:
@@ -119,32 +141,29 @@ proc processMsg(b: Telebot, ft: Bot, user: storage.User, msg: Message) {.async.}
       let (isCurFrom, curFrom) = `from`(msg)
       if isCurFrom and not isPrevFrom:
         debug "prev text"
-        let t = await tags(b, msg, user, prev.text.get)
-        ft.db.setTag(user.id, curFrom, t)
         ft.cache[user.id] = msg
-        let btns = await showTopButtons(b, ft, msg, tag[user.locale], curFrom.id)
-        await sleepAsync(BTNS_TIMEOUT)
-        await hideButtons(b, btns, done[user.locale])
-        ft.cache.del(user.id)
+        await processTag(b, ft, msg, user, curFrom, prev.text.get)
       elif (not isCurFrom) and isPrevFrom:
         debug "current text"
-        let t = await tags(b, msg, user, text)
-        ft.db.setTag(user.id, prevFrom, t)
-        let btns = await showTopButtons(b, ft, msg, tag[user.locale], curFrom.id)
-        await sleepAsync(BTNS_TIMEOUT)
-        await hideButtons(b, btns, done[user.locale])
-        ft.cache.del(user.id)
+        await processTag(b, ft, msg, user, prevFrom, text)
       else:
         error "brr"
     else:
       debug "no cache for ", user.id
-      ft.cache[user.id] = msg
-      let (isCurFrom, curFrom) = `from`(msg)
-      if isCurFrom:
-        let btns = await showTopButtons(b, ft, msg, tag[user.locale], curFrom.id)
-        await sleepAsync(BTNS_TIMEOUT)
-        await hideButtons(b, btns, done[user.locale])
-        ft.cache.del(user.id)
+      if text == "/id":
+        ft.cache[user.id] = msg
+        await sleepAsync(1 * 1000)
+        if user.id in ft.cache:
+          await b.reply(msg, idUsage[user.locale])
+          ft.cache.del(user.id)
+      else:
+        ft.cache[user.id] = msg
+        let (isCurFrom, curFrom) = `from`(msg)
+        if isCurFrom:
+          let btns = await showTopButtons(b, ft, msg, tag[user.locale], curFrom.id)
+          await sleepAsync(BTNS_TIMEOUT)
+          await hideButtons(b, btns, done[user.locale])
+          ft.cache.del(user.id)
 
 proc main() =
   addHandler(newConsoleLogger(fmtStr=verboseFmtStr))
@@ -165,7 +184,6 @@ proc main() =
         warn "message not found"
         return
       
-
       let msg = u.callbackQuery.get.message.get
       let markup = msg.replyMarkup.get
       let data = u.callbackQuery.get.data.get

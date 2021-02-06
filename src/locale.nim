@@ -39,25 +39,29 @@ const help* = {
   En: """
 Forward message from any user and add space- or comma-separated tags in text.
 
-/help        - usage
-/me          - show tags you marked with
-/my          - show tags set by you
-/top         - top tags and users
-/top #[tag]  - top user's with the tag
-/top @[user] - top tag's for the user
+/help         - usage
+/me           - show tags you marked with
+/my           - show tags set by you
+/id           - show tags you set for user (use /id in forwarded message only)
+/id @username - show tags you set for the username
+/top          - top tags and users
+/top #[tag]   - top user's with the tag
+/top @[user]  - top tag's for the user
 
 """,
   Ru: """
 Отправьте сообщение от любого пользователя и добавьте теги, разделённые запятыми или пробелами.
 
-/help        - помощь
-/me          - показать установленные вам теги
-/my          - показать теги, которые установили вы
-/top         - top тегов и их пользователей
-/top #[tag]  - top пользователей по тегу
-/top @[user] - top тегов по пользователю
+/help         - помощь
+/me           - показать установленные вам теги
+/my           - показать теги, которые установили вы
+/id           - показать теги, которые вы поставили пользователю (работает только при пересылке сообщения от кого-то)
+/id @username - показать теги, которые вы поставили этому пользователю
+/top          - top тегов и их пользователей
+/top #[tag]   - top пользователей по тегу
+/top @[user]  - top тегов по пользователю
 
-help"""
+"""
 }.toTable
 
 const stopped* = {
@@ -98,4 +102,19 @@ const protected* = {
 const wrong* = {
   En: "The following tags are not set (tag len is from " & $TAG_RUNES.a & " to " & $TAG_RUNES.b & " characters):",
   Ru: "Данные теги не установлены (длина тега от " & $TAG_RUNES.a & " до " & $TAG_RUNES.b & " символов):"
+}.toTable
+
+const tagsForUser* = {
+  En: "You have set following tags for the user: ",
+  Ru: "Вы устанавливали следующие теги на этого пользователя: "
+}.toTable
+
+const noTagsForUser* = {
+  En: "You have not set tags for the user yet",
+  Ru: "Вы не устанавливали теги для этого пользователя"
+}.toTable
+
+const idUsage* = {
+  En: "Use /id command after fowarded message from the user you want to check. or use /id @username",
+  Ru: "Используйте команду /id после того, как переслали сообщение от пользователя которого хотите проверить или /id @username"
 }.toTable
