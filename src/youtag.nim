@@ -76,7 +76,7 @@ proc checkOnStart(b: TeleBot, ft: Bot, orig: Message, user: storage.User) {.asyn
 
 proc mapTag(x: (string, int)): string =
   result = x[0]
-  if x[1] > 0:
+  if x[1] > 1:
     result = "*" & result & "*"
 
 proc replyTags(b: Telebot, orig: Message, user: storage.User, userT: seq[(string, int)]) {.async.} =
