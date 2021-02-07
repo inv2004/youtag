@@ -182,9 +182,9 @@ proc showTopButtons30S(b: Telebot, ft: Bot, orig: Message, entity: CacheEntity, 
   await sleepAsync(BTNS_TIMEOUT)
 
   if user.id in ft.cache:
-    debug "BTN: ", ft.cache[user.id][]
     let entity = ft.cache[user.id]
     if entity.btnsMsg.isSome:
+      debug "BTN DROP de: ", entity.btnsMsg.get.messageId
       await hideButtons(b, entity.btnsMsg.get, done[user.locale], false)
       ft.cache.del(user.id)
 
