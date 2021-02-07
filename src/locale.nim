@@ -115,7 +115,7 @@ const noTagsForUser* = {
 }.toTable
 
 const idUsage* = {
-  En: "Use /id command after fowarded message from the user you want to check. or use /id @username",
+  En: "Use /id command after fowarded message from the user you want to check or use /id @username",
   Ru: "Используйте команду /id после того, как переслали сообщение от пользователя которого хотите проверить или /id @username"
 }.toTable
 
