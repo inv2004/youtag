@@ -98,11 +98,11 @@ proc my*(self; userID: int): string =
   
   return "<pre>" & result & "</pre>"
 
-proc userTags*(self; userID: int): seq[(string, int)] =
+proc userTags*(self; userID: int): seq[(string, int)] = # TODO: fix privacy
   for row in self.db.rows(sql"SELECT tag, COUNT(1) FROM tags WHERE user = ? GROUP BY tag", userID):
     result.add (row[0], row[1].parseInt())
 
-proc userNameTags*(self; userName: string): seq[(string, int)] =
+proc userNameTags*(self; userName: string): seq[(string, int)] = # TODO: fix privacy
   for row in self.db.rows(sql"SELECT tag, COUNT(1) FROM tags INNER JOIN users ON users.username = ? WHERE tags.user = users.id GROUP BY tag", userName):
     result.add (row[0], row[1].parseInt())
 
