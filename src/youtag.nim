@@ -10,7 +10,7 @@ import locale
 
 const API_KEY = slurp("telegram.key")
 
-const MSG_TIMEOUT = 1 * 1000
+const MSG_TIMEOUT = 900
 const BTNS_TIMEOUT = 30 * 1000
 const BTNS_ROW_SIZE = 5
 
@@ -87,6 +87,13 @@ proc replyTags(b: Telebot, orig: Message, user: storage.User, userT: seq[(string
                   noTagsForUser[user.locale]
     await b.reply(orig, respT)
 
+proc replyIn1S(b: TeleBot, ft: Bot, msg: Message, userID: int, text: string) {.async.} =
+  await sleepAsync(MSG_TIMEOUT)
+  if ft.cache.getOrDefault(userID).messageId == msg.messageId:
+    await b.reply(msg, text)
+    ft.cache.del(userID)
+
+
 proc processCmd(b: TeleBot, ft: Bot, orig: Message, user: storage.User, cmd: string) {.async.} =
   case cmd:
   of "/start":
@@ -103,7 +110,11 @@ proc processCmd(b: TeleBot, ft: Bot, orig: Message, user: storage.User, cmd: str
   elif cmd.startsWith("/id @"): await b.replyTags(orig, user, ft.db.userNameTags(cmd[5..^1]))
   else: await b.reply(orig, unknown[user.locale])
 
-proc showTopButtons(b: Telebot, ft: Bot, orig: Message, msg: string, userID: int): Future[Message] {.async.} =
+proc hideButtons(b: Telebot, orig: Message, msg: string) {.async.} =
+  let markup = newInlineKeyboardMarkup()
+  discard await b.editMessageText(msg, $orig.chat.id, orig.messageId, replyMarkup = markup)
+
+proc showTopButtons30S(b: Telebot, ft: Bot, orig: Message, userID: int, user: storage.User) {.async.} =
   if orig.fromUser.isNone:
     raise newException(ValueError, "fromUser")
 
@@ -116,11 +127,11 @@ proc showTopButtons(b: Telebot, ft: Bot, orig: Message, msg: string, userID: int
     btns[int(i / BTNS_ROW_SIZE)].add b
 
   let replyMarkup = newInlineKeyboardMarkup(btns)
-  return await b.sendMessage(orig.chat.id, msg, disableNotification = true, replyMarkup = replyMarkup)
+  let btnsMsg = await b.sendMessage(orig.chat.id, tag[user.locale], disableNotification = true, replyMarkup = replyMarkup)
 
-proc hideButtons(b: Telebot, orig: Message, msg: string) {.async.} =
-  let markup = newInlineKeyboardMarkup()
-  discard await b.editMessageText(msg, $orig.chat.id, orig.messageId, replyMarkup = markup)
+  await sleepAsync(BTNS_TIMEOUT)
+  await hideButtons(b, btnsMsg, done[user.locale])
+  ft.cache.del(userID)
 
 proc processTag(b: TeleBot, ft: Bot, msg: Message, user, fromUser: storage.User, txtMsg, fromMsg: Message, delay: bool) {.async.} =
   if delay:
@@ -138,10 +149,7 @@ proc processTag(b: TeleBot, ft: Bot, msg: Message, user, fromUser: storage.User,
       debug("exit processTag")
       return
     ft.db.setTag(user.id, fromUser, t)
-    let btns = await showTopButtons(b, ft, msg, tag[user.locale], fromUser.id)
-    await sleepAsync(BTNS_TIMEOUT)
-    await hideButtons(b, btns, done[user.locale])
-    ft.cache.del(user.id)
+    await showTopButtons30S(b, ft, msg, fromUser.id, user)
 
 proc processMsg(b: Telebot, ft: Bot, user: storage.User, msg: Message) {.async.} =
   let text = msg.text.get("")
@@ -165,25 +173,15 @@ proc processMsg(b: Telebot, ft: Bot, user: storage.User, msg: Message) {.async.}
         error "brr"
     else:
       debug "no cache for ", user.id
+      ft.cache[user.id] = msg
       if text == "/id":
-        ft.cache[user.id] = msg
-        await sleepAsync(MSG_TIMEOUT)
-        if ft.cache.getOrDefault(user.id).messageId == msg.messageId:
-          await b.reply(msg, idUsage[user.locale])
-          ft.cache.del(user.id)
+        await b.replyIn1S(ft, msg, user.id, idUsage[user.locale])
       else:
-        ft.cache[user.id] = msg
         let (isCurFrom, curFrom) = `from`(msg)
         if isCurFrom:
-          let btns = await showTopButtons(b, ft, msg, tag[user.locale], curFrom.id)
-          await sleepAsync(BTNS_TIMEOUT)
-          await hideButtons(b, btns, done[user.locale])
-          ft.cache.del(user.id)
+          await showTopButtons30S(b, ft, msg, curFrom.id, user)
         else:
-          await sleepAsync(MSG_TIMEOUT)
-          if ft.cache.getOrDefault(user.id).messageId == msg.messageId:
-            await b.reply(msg, forwardHelp[user.locale])
-            ft.cache.del(user.id)
+          await b.replyIn1S(ft, msg, user.id, forwardHelp[user.locale])
 
 proc main() =
   addHandler(newConsoleLogger(fmtStr=verboseFmtStr))
