@@ -8,8 +8,6 @@ import locale
 
 const FILE = "db/db.db"
 const DB_NAME = "youtag"
-const TAG_LOW = 4
-const TAG_HIGH = 25
 
 const INIT_SQL = @[
   sql"""
@@ -69,8 +67,6 @@ proc setTag*(self; setterID: int, user: User, tags: seq[string]) =
   setUser(self, user)
 
   for t in tags:
-    if t.len notin TAG_LOW..TAG_HIGH:
-      continue
     try:
       discard self.db.insertID(INSERT_TAG_SQL, setterID, user.id, t)
     except DbError:
