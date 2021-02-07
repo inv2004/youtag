@@ -17,6 +17,7 @@ jobs:
         if: runner.os != 'Windows'
       - uses: jiro4989/setup-nim-action@v1
       # - run: nimble test -y
+      - run: echo "${{ secrets.TELEGRAM_KEY }}" > src/telegram.key
       - run: nimble -d:release -y build
       - uses: appleboy/scp-action@master
         with:
