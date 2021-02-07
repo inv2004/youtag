@@ -123,3 +123,8 @@ const userTagsHelp* = {
   En: "\\* tags confirmed by someone else marked in bold",
   Ru: "\\* Теги, подтверждённые кем-то ещё, выделены болдом"
 }.toTable
+
+const forwardHelp* = {
+  En: "Please forward message from user",
+  Ru: "Перешлите сообщение от пользователя"
+}.toTable

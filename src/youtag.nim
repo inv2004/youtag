@@ -10,7 +10,8 @@ import locale
 
 const API_KEY = slurp("telegram.key")
 
-const BTNS_TIMEOUT = 15 * 1000
+const MSG_TIMEOUT = 1 * 1000
+const BTNS_TIMEOUT = 30 * 1000
 const BTNS_ROW_SIZE = 5
 
 let BOT_COMMANDS = @[
@@ -121,12 +122,21 @@ proc hideButtons(b: Telebot, orig: Message, msg: string) {.async.} =
   let markup = newInlineKeyboardMarkup()
   discard await b.editMessageText(msg, $orig.chat.id, orig.messageId, replyMarkup = markup)
 
-proc processTag(b: TeleBot, ft: Bot, msg: Message, user, fromUser: storage.User, text: string) {.async.} =
+proc processTag(b: TeleBot, ft: Bot, msg: Message, user, fromUser: storage.User, txtMsg, fromMsg: Message, delay: bool) {.async.} =
+  if delay:
+    await sleepAsync(MSG_TIMEOUT)
+  let text = txtMsg.text.get
   if text == "/id":
+    if ft.cache.getOrDefault(user.id).messageId != fromMsg.messageId:
+      debug("exit processTag")
+      return
     await b.replyTags(msg, user, ft.db.userTags(fromUser.id))
     ft.cache.del(user.id)
   else:
     let t = await tags(b, msg, user, text)
+    if ft.cache.getOrDefault(user.id).messageId != fromMsg.messageId:
+      debug("exit processTag")
+      return
     ft.db.setTag(user.id, fromUser, t)
     let btns = await showTopButtons(b, ft, msg, tag[user.locale], fromUser.id)
     await sleepAsync(BTNS_TIMEOUT)
@@ -147,18 +157,18 @@ proc processMsg(b: Telebot, ft: Bot, user: storage.User, msg: Message) {.async.}
       if isCurFrom and not isPrevFrom:
         debug "prev text"
         ft.cache[user.id] = msg
-        await processTag(b, ft, msg, user, curFrom, prev.text.get)
+        await processTag(b, ft, msg, user, curFrom, prev, msg, false)
       elif (not isCurFrom) and isPrevFrom:
         debug "current text"
-        await processTag(b, ft, msg, user, prevFrom, text)
+        await processTag(b, ft, msg, user, prevFrom, msg, prev, true)
       else:
         error "brr"
     else:
       debug "no cache for ", user.id
       if text == "/id":
         ft.cache[user.id] = msg
-        await sleepAsync(1 * 1000)
-        if user.id in ft.cache:
+        await sleepAsync(MSG_TIMEOUT)
+        if ft.cache.getOrDefault(user.id).messageId == msg.messageId:
           await b.reply(msg, idUsage[user.locale])
           ft.cache.del(user.id)
       else:
@@ -169,6 +179,11 @@ proc processMsg(b: Telebot, ft: Bot, user: storage.User, msg: Message) {.async.}
           await sleepAsync(BTNS_TIMEOUT)
           await hideButtons(b, btns, done[user.locale])
           ft.cache.del(user.id)
+        else:
+          await sleepAsync(MSG_TIMEOUT)
+          if ft.cache.getOrDefault(user.id).messageId == msg.messageId:
+            await b.reply(msg, forwardHelp[user.locale])
+            ft.cache.del(user.id)
 
 proc main() =
   addHandler(newConsoleLogger(fmtStr=verboseFmtStr))
