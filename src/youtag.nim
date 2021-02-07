@@ -25,9 +25,46 @@ let BOT_COMMANDS = @[
 type
   ProtectedUserError = object of ValueError
 
+  SetKind = enum KReadyFrom, KReadyText, KFrom, KText 
+
+  CacheEntity = ref object
+    id: int
+    fID: int
+    f: Option[storage.User]
+    t: string
+    btnsMsg: Option[Message]
+
   Bot = object
     db: DB
-    cache: TableRef[int, Message]
+    cache: TableRef[int, CacheEntity]
+
+proc set(e: CacheEntity, msg: Message): SetKind =
+  if msg.forwardDate.isSome:
+    if msg.forwardFrom.isSome:
+      let user = storage.User(
+        id: msg.forwardFrom.get.id,
+        username: msg.forwardFrom.get.username,
+        locale: msg.fromUser.get().languageCode.get("ru").parseEnum(Ru)
+      )
+      e.f = some(user)
+      e.id = msg.messageId
+      e.fID = msg.messageId
+
+      if e.t.len > 0:
+        return KReadyFrom
+      else:
+        return KFrom
+    raise newException(ProtectedUserError, "protected user")
+  elif msg.text.isSome:
+    e.t = msg.text.get
+    e.id = msg.messageId
+
+    if e.f.isSome:
+      return KReadyText
+    else:
+      return KText
+  else:
+    raise newException(ValueError, "unknown state")
 
 proc `from`(msg: Message): (bool, storage.User) =
   if msg.forwardDate.isSome:
@@ -89,10 +126,9 @@ proc replyTags(b: Telebot, orig: Message, user: storage.User, userT: seq[(string
 
 proc replyIn1S(b: TeleBot, ft: Bot, msg: Message, userID: int, text: string) {.async.} =
   await sleepAsync(MSG_TIMEOUT)
-  if ft.cache.getOrDefault(userID).messageId == msg.messageId:
+  if userID in ft.cache and ft.cache[userID].id == msg.messageId:
     await b.reply(msg, text)
     ft.cache.del(userID)
-
 
 proc processCmd(b: TeleBot, ft: Bot, orig: Message, user: storage.User, cmd: string) {.async.} =
   case cmd:
@@ -110,46 +146,64 @@ proc processCmd(b: TeleBot, ft: Bot, orig: Message, user: storage.User, cmd: str
   elif cmd.startsWith("/id @"): await b.replyTags(orig, user, ft.db.userNameTags(cmd[5..^1]))
   else: await b.reply(orig, unknown[user.locale])
 
-proc hideButtons(b: Telebot, orig: Message, msg: string) {.async.} =
-  let markup = newInlineKeyboardMarkup()
-  discard await b.editMessageText(msg, $orig.chat.id, orig.messageId, replyMarkup = markup)
+proc hideButtons(b: Telebot, orig: Message, msg: string, delete: bool) {.async.} =
+  if delete:
+    discard await b.deleteMessage($orig.chat.id, orig.messageId)
+  else:
+    let markup = newInlineKeyboardMarkup()
+    discard await b.editMessageText(msg, $orig.chat.id, orig.messageId, replyMarkup = markup)
 
-proc showTopButtons30S(b: Telebot, ft: Bot, orig: Message, userID: int, user: storage.User) {.async.} =
+proc showTopButtons30S(b: Telebot, ft: Bot, orig: Message, entity: CacheEntity, user: storage.User) {.async.} =
   if orig.fromUser.isNone:
     raise newException(ValueError, "fromUser")
 
   let setter = orig.fromUser.get().id
+  let fID = entity.f.get.id
 
   var btns = newSeq[seq[InlineKeyboardButton]](2)
   for i, tt in ft.db.topTags():
     var b = initInlineKeyBoardButton($(i+1) & ". " & tt)
-    b.callbackData = some(@["set",$setter,$userID,tt].join(":"))
+    b.callbackData = some(@["set",$setter,$fID,tt].join(":"))
     btns[int(i / BTNS_ROW_SIZE)].add b
 
   let replyMarkup = newInlineKeyboardMarkup(btns)
+
+  var entity = ft.cache[user.id]
+  if entity.btnsMsg.isSome:
+    let oldBtnsMsg = entity.btnsMsg.get
+    entity.btnsMsg = none(Message)
+    debug "BTN OLD: ", oldBtnsMsg.messageId
+    asyncCheck hideButtons(b, oldBtnsMsg, done[user.locale], true)
+
   let btnsMsg = await b.sendMessage(orig.chat.id, tag[user.locale], disableNotification = true, replyMarkup = replyMarkup)
+  debug "BTN ASSIGN: ", btnsMsg.messageId
+  entity.btnsMsg = some(btnsMsg)
 
   await sleepAsync(BTNS_TIMEOUT)
-  await hideButtons(b, btnsMsg, done[user.locale])
-  ft.cache.del(userID)
 
-proc processTag(b: TeleBot, ft: Bot, msg: Message, user, fromUser: storage.User, txtMsg, fromMsg: Message, delay: bool) {.async.} =
+  if user.id in ft.cache:
+    debug "BTN: ", ft.cache[user.id][]
+    let entity = ft.cache[user.id]
+    if entity.btnsMsg.isSome:
+      await hideButtons(b, entity.btnsMsg.get, done[user.locale], false)
+      ft.cache.del(user.id)
+
+proc processTag(b: TeleBot, ft: Bot, msg: Message, user: storage.User, entity: CacheEntity, delay: bool) {.async.} =
   if delay:
     await sleepAsync(MSG_TIMEOUT)
-  let text = txtMsg.text.get
-  if text == "/id":
-    if ft.cache.getOrDefault(user.id).messageId != fromMsg.messageId:
+  if entity.t == "/id":
+    if user.id in ft.cache and ft.cache[user.id].fID != entity.fID:
       debug("exit processTag")
       return
-    await b.replyTags(msg, user, ft.db.userTags(fromUser.id))
+    await b.replyTags(msg, user, ft.db.userTags(entity.f.get.id))
     ft.cache.del(user.id)
   else:
-    let t = await tags(b, msg, user, text)
-    if ft.cache.getOrDefault(user.id).messageId != fromMsg.messageId:
+    let t = await tags(b, msg, user, entity.t)
+    if user.id in ft.cache and ft.cache[user.id].fID != entity.fID:
       debug("exit processTag")
       return
-    ft.db.setTag(user.id, fromUser, t)
-    await showTopButtons30S(b, ft, msg, fromUser.id, user)
+    ft.db.setTag(user.id, entity.f.get, t)
+    await showTopButtons30S(b, ft, msg, entity, user)
 
 proc processMsg(b: Telebot, ft: Bot, user: storage.User, msg: Message) {.async.} =
   let text = msg.text.get("")
@@ -157,38 +211,31 @@ proc processMsg(b: Telebot, ft: Bot, user: storage.User, msg: Message) {.async.}
     await b.processCmd(ft, msg, user, text)
     ft.cache.del(user.id)
   else:
-    if ft.cache.hasKey(user.id):
-      debug "has cache for ", user.id
-      let prev = ft.cache[user.id]
-      let (isPrevFrom, prevFrom) = `from`(prev)
-      let (isCurFrom, curFrom) = `from`(msg)
-      if isCurFrom and not isPrevFrom:
-        debug "prev text"
-        ft.cache[user.id] = msg
-        await processTag(b, ft, msg, user, curFrom, prev, msg, false)
-      elif (not isCurFrom) and isPrevFrom:
-        debug "current text"
-        await processTag(b, ft, msg, user, prevFrom, msg, prev, true)
-      else:
-        error "brr"
-    else:
-      debug "no cache for ", user.id
-      ft.cache[user.id] = msg
+    var entity = ft.cache.mgetOrPut(user.id, CacheEntity())
+    let st = entity.set(msg)
+    case st:
+    of KReadyFrom:
+      debug st
+      await processTag(b, ft, msg, user, entity, false)
+    of KReadyText:
+      debug st
+      await processTag(b, ft, msg, user, entity, true)
+    of KFrom:
+      debug st
+      await showTopButtons30S(b, ft, msg, entity, user)
+    of KText:
+      debug st
       if text == "/id":
         await b.replyIn1S(ft, msg, user.id, idUsage[user.locale])
       else:
-        let (isCurFrom, curFrom) = `from`(msg)
-        if isCurFrom:
-          await showTopButtons30S(b, ft, msg, curFrom.id, user)
-        else:
-          await b.replyIn1S(ft, msg, user.id, forwardHelp[user.locale])
+        await b.replyIn1S(ft, msg, user.id, forwardHelp[user.locale])
 
 proc main() =
   addHandler(newConsoleLogger(fmtStr=verboseFmtStr))
   addHandler(newRollingFileLogger(fmtStr=verboseFmtStr, maxlines=100000))
   setLogFilter(lvlDebug)
 
-  let ft = Bot(cache: newTable[int, Message](), db: newDB())
+  let ft = Bot(cache: newTable[int, CacheEntity](), db: newDB())
   defer: ft.db.close()
 
   let bot = newTeleBot(API_KEY)

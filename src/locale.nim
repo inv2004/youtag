@@ -5,7 +5,7 @@ const TAG_RUNES* = 4..20
 type
   Locale* = enum Ru = "ru", En = "en"
 
-const title* = "YouTag   -   Tag the World!"
+const title* = "*YouTag*   -   Tag the World!"
 
 const hello* = {
   En: """
@@ -125,6 +125,6 @@ const userTagsHelp* = {
 }.toTable
 
 const forwardHelp* = {
-  En: "Please forward message from user",
-  Ru: "Перешлите сообщение от пользователя"
+  En: "Please forward message from user first",
+  Ru: "Сначала перешлите сообщение от пользователя"
 }.toTable
