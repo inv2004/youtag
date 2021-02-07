@@ -10,7 +10,7 @@ import locale
 
 const API_KEY = slurp("telegram.key")
 
-const BTNS_TIMEOUT = 30 * 1000
+const BTNS_TIMEOUT = 15 * 1000
 const BTNS_ROW_SIZE = 5
 
 let BOT_COMMANDS = @[
