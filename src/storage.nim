@@ -26,15 +26,20 @@ CREATE TABLE IF NOT EXISTS users (
   active BOOLEAN,
   PRIMARY KEY(id, username)
 )
-"""
+""",
+  sql"ALTER TABLE users ADD COLUMN datetime TEXT",
+  sql"UPDATE users SET datetime = datetime('now') WHERE datetime IS NULL",
+  sql"ALTER TABLE tags ADD COLUMN datetime TEXT",
+  sql"UPDATE tags SET datetime = datetime('now') WHERE datetime IS NULL"
 ]
 
-const INSERT_USER_SQL = sql"INSERT INTO users (id, username, locale, active) VALUES(?,?,?,1)"
-const INSERT_TAG_SQL = sql"INSERT INTO tags (setter, user, tag) VALUES(?,?,?)"
+const INSERT_USER_SQL = sql"INSERT INTO users (id, username, locale, active, datetime) VALUES(?,?,?,?,datetime('now'))"
+const REPLACE_USER_SQL = sql"REPLACE INTO users (id, username, locale, active, datetime) VALUES(?,?,?,datetime('now'))"
+const INSERT_TAG_SQL = sql"INSERT INTO tags (setter, user, tag, datetime) VALUES(?,?,?,datetime('now'))"
 
 type
   DB* = ref object
-    db: DbConn
+    db*: DbConn
 
   User* = object
     id*: int
@@ -48,23 +53,33 @@ proc newDB*(): DB =
   createDir(parentDir(FILE));
   let db = db_sqlite.open(FILE, "", "", DB_NAME)
   for sql in INIT_SQL:
-    db.exec(sql)
+    try:
+      db.exec(sql)
+    except DbError:
+      let errMsg = getCurrentExceptionMsg()
+      if not errMsg.startsWith("duplicate column name"):
+        error errMsg
+        raise getCurrentException()
 
   DB(db: db)
 
-proc setUser*(self; user: User) =
-  if user.username.isSome:
-    try:
-      discard self.db.insertID(INSERT_USER_SQL, user.id, user.username.get, user.locale)
-    except DbError:
-      let errMsg = getCurrentExceptionMsg()
-      if not errMsg.startsWith("UNIQUE constraint failed"):
-        error "set failed: ", getCurrentExceptionMsg()
+proc setUser*(self; user: User, active: bool) =
+  # if user.username.isSome:
+  try:
+    if active:
+      self.db.exec(REPLACE_USER_SQL, user.id, user.username.get, user.locale, "1")
+    else:
+      self.db.exec(INSERT_USER_SQL, user.id, user.username.get, user.locale, "0")
+  except DbError:
+    let errMsg = getCurrentExceptionMsg()
+    if not errMsg.startsWith("UNIQUE constraint failed"):
+      error "set failed: ", getCurrentExceptionMsg()
+      raise getCurrentException()
 
 proc setTag*(self; setterID: int, user: User, tags: seq[string]) =
   info "set from ", setterID, ": ", user, ": ", $tags
 
-  setUser(self, user)
+  setUser(self, user, false)
 
   for t in tags:
     try:

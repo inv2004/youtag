@@ -133,7 +133,7 @@ proc replyIn1S(b: TeleBot, ft: Bot, msg: Message, userID: int, text: string) {.a
 proc processCmd(b: TeleBot, ft: Bot, orig: Message, user: storage.User, cmd: string) {.async.} =
   case cmd:
   of "/start":
-    ft.db.setUser(user)
+    ft.db.setUser(user, true)
     await b.reply(orig, locale.title & "\n\n" & hello[user.locale])
 
     await checkOnStart(b, ft, orig, user)
