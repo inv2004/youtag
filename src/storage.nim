@@ -11,24 +11,25 @@ const DB_NAME = "youtag"
 const TAG_LOW = 4
 const TAG_HIGH = 25
 
-const INIT_TBL_1 = sql"""
-  CREATE TABLE IF NOT EXISTS tags (
-    setter INT,
-    user INT,
-    tag TEXT,
-    PRIMARY KEY(setter, user, tag)
-  )
+const INIT_SQL = @[
+  sql"""
+CREATE TABLE IF NOT EXISTS tags (
+  setter INT,
+  user INT,
+  tag TEXT,
+  PRIMARY KEY(setter, user, tag)
+)
+""",
+  sql"""
+CREATE TABLE IF NOT EXISTS users (
+  id INT,
+  username TEXT,
+  locale TEXT,
+  active BOOLEAN,
+  PRIMARY KEY(id, username)
+)
 """
-
-const INIT_TBL_2 = sql"""
-  CREATE TABLE IF NOT EXISTS users (
-    id INT,
-    username TEXT,
-    locale TEXT,
-    active BOOLEAN,
-    PRIMARY KEY(id, username)
-  )
-"""
+]
 
 const INSERT_USER_SQL = sql"INSERT INTO users (id, username, locale, active) VALUES(?,?,?,1)"
 const INSERT_TAG_SQL = sql"INSERT INTO tags (setter, user, tag) VALUES(?,?,?)"
@@ -48,8 +49,8 @@ using
 proc newDB*(): DB =
   createDir(parentDir(FILE));
   let db = db_sqlite.open(FILE, "", "", DB_NAME)
-  db.exec(INIT_TBL_1)
-  db.exec(INIT_TBL_2)
+  for sql in INIT_SQL:
+    db.exec(sql)
 
   DB(db: db)
 
