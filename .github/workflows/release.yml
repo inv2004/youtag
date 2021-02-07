@@ -25,5 +25,5 @@ jobs:
           username: ${{ secrets.HOST_USER }}
           passphrase: ${{ secrets.HOST_PP }}
           key: ${{ secrets.HOST_KEY }}
-          source: "youtag"
+          source: "youtag,dump"
           target: "youtag"
