@@ -235,7 +235,7 @@ proc main() =
   addHandler(newRollingFileLogger(fmtStr=verboseFmtStr, maxlines=100000))
   setLogFilter(lvlDebug)
 
-  let ft = Bot(cache: newTable[int, CacheEntity](), db: newDB())
+  let ft = Bot(cache: newTable[int, CacheEntity](), db: newDB(init = true))
   defer: ft.db.close()
 
   let bot = newTeleBot(API_KEY)

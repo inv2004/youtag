@@ -5,6 +5,7 @@ import terminaltables
 import options
 import strutils
 import locale
+import sequtils
 
 const FILE = "db/db.db"
 const DB_NAME = "youtag"
@@ -49,17 +50,19 @@ type
 using
   self: DB
 
-proc newDB*(): DB =
+proc newDB*(init = false): DB =
   createDir(parentDir(FILE));
   let db = db_sqlite.open(FILE, "", "", DB_NAME)
-  for sql in INIT_SQL:
-    try:
-      db.exec(sql)
-    except DbError:
-      let errMsg = getCurrentExceptionMsg()
-      if not errMsg.startsWith("duplicate column name"):
-        error errMsg
-        raise getCurrentException()
+
+  if init:
+    for sql in INIT_SQL:
+      try:
+        db.exec(sql)
+      except DbError:
+        let errMsg = getCurrentExceptionMsg()
+        if not errMsg.startsWith("duplicate column name"):
+          error errMsg
+          raise getCurrentException()
 
   DB(db: db)
 
@@ -122,9 +125,23 @@ proc topTags*(self): seq[string] =
   for row in self.db.rows(sql"SELECT tag, COUNT(1) AS C FROM tags GROUP BY tag ORDER BY C DESC LIMIT 10"):
     result.add row[0]
 
+proc toRow(x: InstantRow): seq[string] =
+  for i in 0..<len(x):
+    result.add x[i]
+
 proc dump*(self; tblName: string) =
-  for row in self.db.rows(sql"SELECT * FROM ?", tblName):
-    echo row
+  let t = newUnicodeTable()
+  t.separateRows = false
+
+  var i = 0
+  var cols: DbColumns
+  for row in self.db.instantRows(cols, sql"SELECT * FROM ?", tblName):
+    if i == 0:
+      echo cols[0].tableName
+      t.setHeaders cols.mapIt(it.name)
+    t.addRow row.toRow()
+    i.inc()
+  t.printTable()
 
 func close*(self) =
   self.db.close()
