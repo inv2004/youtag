@@ -1,16 +1,17 @@
 import storage
 import terminal
 import db_sqlite
+import strutils
 
 let toEval = if isatty(stdin): "" else: readAll(stdin)
 
 let db = newDB()
 if toEval.len > 0:
   try:
-    let q = sql(toEval)
-    echo "Exe: ", repr q
-    for r in db.db.rows(q):
-      echo r
+    for q in toEval.split(";"):
+      echo "Exe: ", q
+      for r in db.db.rows(sql(q)):
+        echo r
   except DbError:
     echo "Err: ", getCurrentExceptionMsg()
 else:
