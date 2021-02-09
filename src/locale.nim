@@ -10,26 +10,38 @@ const title* = "*YouTag*   -   Tag the World!"
 const hello* = {
   En: """
 Hello,
-  The bot helps to collect anonymous feedbacks across the internet and classify users
+  The bot is for anonymous feedbacks using tags. It helps to send and collect anonymous feedbacks via tags.
 
 *Forward* message from any user and *add* space or comma separated *tags* in text.
 
 The user can check his tags without information about setter.
+You can subscribe to new tags' notifications by /on command.
 
 Tag length is from 4 to 25 characters.
+
+Example:
+  1) You just set tag "good-guy" to someone, someone else set the same tag for the guy
+  2) The guy can see he's available anonymous tags and can make a conclusion about it
+  3) In the future, if you meet someone you can check if you have set something on the guy
 
 Use /help for help
 
 """,
   Ru: """
 Привет,
-  Этот бот позволяет узнать теги, которые другие пользователи могут поставить вам анонимно.
+  Это бот для анонимных отзывов с использованием тегов. Он позволяет отправить кому-то тег и узнать теги поставленные вам.
 
 *Отправьте* сообщение от любого пользователя этому боту, после чего ты можете *добавить теги*, разделяемые пробелами или запятыми, или же добавить "популярные" теги с помощью кнопок.
 
-Пользователь может провить свои теги, но не увидит информации о том кто его поставил.
+Пользователь может посмотреть свои теги, но не увидит информации о том кто их поставил.
+Можно подписаться на нотификацию о новых тегах командой /on.
 
 Длина тега от 4 до 25 символов.
+
+Пример:
+  1) Вы поставили кому-то тег "молодец", кто-то ещё ставит этот же тег ему тоже
+  2) Пользователь делает вывод на основании анонимные тегов, которые достались ему
+  3) В будущем, вы можете посмореть ставили ли вы теги комкретному пользователю
 
 Используйте /help для помощи
 """
@@ -40,6 +52,9 @@ const help* = {
 Forward message from any user and add space- or comma-separated tags in text.
 
 /help         - usage
+/on           - you will receive notifications about new tags
+/on interval  - enable nofifications with specific interval: 1m, 1h, 1d
+/off          - disable notification (default)
 /me           - show tags you marked with
 /my           - show tags set by you
 /id           - show tags you set for user (use /id in forwarded message only)
@@ -53,6 +68,9 @@ Forward message from any user and add space- or comma-separated tags in text.
 Отправьте сообщение от любого пользователя и добавьте теги, разделённые запятыми или пробелами.
 
 /help         - помощь
+/on           - получать нотификации о новых тегах
+/on interval  - информировать о тегах с переодичностью: 1m, 1h, 1d
+/off          - отключить нотификации (режим по-умолчанию)
 /me           - показать установленные вам теги
 /my           - показать теги, которые установили вы
 /id           - показать теги, которые вы поставили пользователю (работает только при пересылке сообщения от кого-то)
@@ -128,3 +146,14 @@ const forwardHelp* = {
   En: "Please forward message from user first",
   Ru: "Сначала перешлите сообщение от пользователя"
 }.toTable
+
+const onNote* = {
+  En: "You just subscribed to tags' notification",
+  Ru: "Вы подписались на нотификации о тегах"
+}.toTable
+
+const offNote* = {
+  En: "You just turned tag's notifications off",
+  Ru: "Вы отписались от нотификации"
+}.toTable
+

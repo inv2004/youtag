@@ -14,12 +14,16 @@ const MSG_TIMEOUT = 900
 const BTNS_TIMEOUT = 30 * 1000
 const BTNS_ROW_SIZE = 5
 
+const NOTIFY_DELAY = 60 * 1000
+
 let BOT_COMMANDS = @[
-  BotCommand(command: "help", description: "usage"),
-  BotCommand(command: "me", description: "tags on me"),
-  BotCommand(command: "my", description: "my tags"),
-  BotCommand(command: "id", description: "id for user (after message forward)"),
-  BotCommand(command: "top", description: "top tags/users")
+  BotCommand(command: "help", description: "Usage"),
+  BotCommand(command: "on", description: "Receive notifications about new tags"),
+  BotCommand(command: "off", description: "Receive notifications (default)"),
+  BotCommand(command: "me", description: "Tags on me"),
+  BotCommand(command: "my", description: "My tags"),
+  BotCommand(command: "id", description: "Id for user (after message forward)"),
+  BotCommand(command: "top", description: "Top tags/users")
 ]
 
 type
@@ -66,16 +70,21 @@ proc set(e: CacheEntity, msg: Message): SetKind =
   else:
     raise newException(ValueError, "unknown state")
 
-proc `from`(msg: Message): (bool, storage.User) =
-  if msg.forwardDate.isSome:
-    if msg.forwardFrom.isSome:
-      let user = storage.User(
-        id: msg.forwardFrom.get.id,
-        username: msg.forwardFrom.get.username,
-        locale: msg.fromUser.get().languageCode.get("ru").parseEnum(Ru)
-      )
-      return (true, user)
-    raise newException(ProtectedUserError, "protected user")
+proc mapTag(x: (string, int)): string =
+  result = x[0]
+  if x[1] > 1:
+    result = "*" & result & "*"
+
+proc sendNotifications(b: TeleBot, ft: Bot) {.async.} =
+  while true:
+    debug "notify timer"
+    for (userID, locale, tags, datetime) in ft.db.getNotifications():
+      debug userID, "(", locale, "): ", tags, " ", datetime
+      let text = "New tags: " & tags.map(mapTag).join(", ") & "\n\n" & userTagsHelp[locale]
+      discard await b.sendMessage(userID, text, "markdown", disableNotification = true)
+      ft.db.setLast(userID, datetime)
+      await sleepAsync(100)
+    await sleepAsync(NOTIFY_DELAY)
 
 proc reply(b: TeleBot, orig: Message, msg: string) {.async.} =
   let mode = if msg.startsWith("<pre>"): "html" else: "markdown"
@@ -112,11 +121,6 @@ proc checkOnStart(b: TeleBot, ft: Bot, orig: Message, user: storage.User) {.asyn
   if ft.db.checkMe(user.id):
     await b.reply(orig, found[user.locale])
 
-proc mapTag(x: (string, int)): string =
-  result = x[0]
-  if x[1] > 1:
-    result = "*" & result & "*"
-
 proc replyTags(b: Telebot, orig: Message, user: storage.User, userT: seq[(string, int)]) {.async.} =
     let respT = if userT.len > 0:
                   tagsForUser[user.locale] & userT.map(mapTag).join(", ") & "\n\n" & userTagsHelp[user.locale]
@@ -130,20 +134,36 @@ proc replyIn1S(b: TeleBot, ft: Bot, msg: Message, userID: int, text: string) {.a
     await b.reply(msg, text)
     ft.cache.del(userID)
 
+proc convInterval(str: string): int =
+  case str:
+  of "1m": 60
+  of "1h": 60*60
+  of "1d": 24*60*60
+  else:
+    raise newException(ValueError, "Error: Inteval can be 1m, 1h or 1d")
+
 proc processCmd(b: TeleBot, ft: Bot, orig: Message, user: storage.User, cmd: string) {.async.} =
   case cmd:
   of "/start":
     ft.db.setUser(user, true)
     await b.reply(orig, locale.title & "\n\n" & hello[user.locale])
-
     await checkOnStart(b, ft, orig, user)
   of "/help": await b.reply(orig, help[user.locale])
+  of "/on":
+    ft.db.setNotify(user.id, convInterval("1m"))
+    await b.reply(orig, onNote[user.locale])
+  of "/off":
+    ft.db.setNotify(user.id, 0)
+    await b.reply(orig, offNote[user.locale])
   of "/me": await b.reply(orig, ft.db.me(user.id))
   of "/my": await b.reply(orig, ft.db.my(user.id))
   of "/id": await b.reply(orig, idUsage[user.locale])
   of "/stop": await b.reply(orig, stopped[user.locale])
   elif cmd.startsWith("/top"): await b.reply(orig, top[user.locale])
   elif cmd.startsWith("/id @"): await b.replyTags(orig, user, ft.db.userNameTags(cmd[5..^1]))
+  elif cmd.startsWith("/on "):
+    ft.db.setNotify(user.id, convInterval(cmd[4..^1]))
+    await b.reply(orig, onNote[user.locale])
   else: await b.reply(orig, unknown[user.locale])
 
 proc hideButtons(b: Telebot, orig: Message, msg: string, delete: bool) {.async.} =
@@ -206,6 +226,7 @@ proc processTag(b: TeleBot, ft: Bot, msg: Message, user: storage.User, entity: C
     await showTopButtons30S(b, ft, msg, entity, user)
 
 proc processMsg(b: Telebot, ft: Bot, user: storage.User, msg: Message) {.async.} =
+  # ft.db.checkChat(user)
   let text = msg.text.get("")
   if text.startsWith("/") and msg.forwardDate.isNone and text != "/id":
     await b.processCmd(ft, msg, user, text)
@@ -285,6 +306,8 @@ proc main() =
   info("set commands")
 
   doAssert waitFor bot.setMyCommands(BOT_COMMANDS)
+
+  asyncCheck sendNotifications(bot, ft)
 
   info("started")
 

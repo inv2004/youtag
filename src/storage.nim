@@ -6,9 +6,11 @@ import options
 import strutils
 import locale
 import sequtils
+import tables
 
 const FILE = "db/db.db"
 const DB_NAME = "youtag"
+const NOW = "now"
 
 const INIT_SQL = @[
   sql"""
@@ -16,6 +18,7 @@ CREATE TABLE IF NOT EXISTS tags (
   setter INT,
   user INT,
   tag TEXT,
+  datetime TEXT,
   PRIMARY KEY(setter, user, tag)
 )
 """,
@@ -25,18 +28,31 @@ CREATE TABLE IF NOT EXISTS users (
   username TEXT,
   locale TEXT,
   active BOOLEAN,
-  PRIMARY KEY(id, username)
+  notify INTEGER,
+  last TEXT,
+  datetime TEXT,
+  PRIMARY KEY(id)
 )
-""",
-  sql"ALTER TABLE users ADD COLUMN datetime TEXT",
-  sql"UPDATE users SET datetime = datetime('now') WHERE datetime IS NULL",
-  sql"ALTER TABLE tags ADD COLUMN datetime TEXT",
-  sql"UPDATE tags SET datetime = datetime('now') WHERE datetime IS NULL"
+"""
 ]
 
-const INSERT_USER_SQL = sql"INSERT INTO users (id, username, locale, active, datetime) VALUES(?,?,?,?,datetime('now'))"
-const REPLACE_USER_SQL = sql"REPLACE INTO users (id, username, locale, active, datetime) VALUES(?,?,?,datetime('now'))"
-const INSERT_TAG_SQL = sql"INSERT INTO tags (setter, user, tag, datetime) VALUES(?,?,?,datetime('now'))"
+const INSERT_USER_SQL = sql"INSERT INTO users (id, username, locale, active, notify, last, datetime) VALUES(?,?,?,?,?,datetime(?),datetime(?))"
+const REPLACE_USER_SQL = sql"REPLACE INTO users (id, username, locale, active, notify, last, datetime) VALUES(?,?,?,?,?,datetime(?),datetime(?))"
+const INSERT_TAG_SQL = sql"INSERT INTO tags (setter, user, tag, datetime) VALUES(?,?,?,datetime(?))"
+const SELECT_NOTIFICATIONS = sql"""
+SELECT U.id, U.locale, T.tag, COUNT(1), datetime('now')
+  FROM users U
+ INNER JOIN tags T
+    ON T.user = U.id
+   AND T.datetime > U.last
+ INNER JOIN tags TT
+    ON TT.user = U.id
+   AND TT.tag = T.tag
+ WHERE U.active = 1
+   AND U.notify > 0
+   AND DATETIME(U.last, '+'||U.notify||' seconds') <= DATETIME('now')
+ GROUP BY U.id, T.tag
+"""
 
 type
   DB* = ref object
@@ -70,14 +86,18 @@ proc setUser*(self; user: User, active: bool) =
   # if user.username.isSome:
   try:
     if active:
-      self.db.exec(REPLACE_USER_SQL, user.id, user.username.get, user.locale, "1")
+      self.db.exec(REPLACE_USER_SQL, user.id, user.username.get(""), user.locale, 1, 0, NOW, NOW)
     else:
-      self.db.exec(INSERT_USER_SQL, user.id, user.username.get, user.locale, "0")
+      self.db.exec(INSERT_USER_SQL, user.id, user.username.get(""), user.locale, 0, 0, NOW, NOW)
   except DbError:
     let errMsg = getCurrentExceptionMsg()
     if not errMsg.startsWith("UNIQUE constraint failed"):
       error "set failed: ", getCurrentExceptionMsg()
       raise getCurrentException()
+
+# proc checkChat*(self; user: User) =
+#   debug "user.id ", user.id, " set chat = ", user.chat
+#   self.db.exec(sql"UPDATE users SET chat = ? WHERE id = ? AND chat <> ?", user.chat, user.id, user.chat)
 
 proc setTag*(self; setterID: int, user: User, tags: seq[string]) =
   info "set from ", setterID, ": ", user, ": ", $tags
@@ -86,12 +106,15 @@ proc setTag*(self; setterID: int, user: User, tags: seq[string]) =
 
   for t in tags:
     try:
-      discard self.db.insertID(INSERT_TAG_SQL, setterID, user.id, t)
+      discard self.db.insertID(INSERT_TAG_SQL, setterID, user.id, t, NOW)
     except DbError:
       warn "set failed: ", getCurrentExceptionMsg()
 
 proc checkMe*(self; userID: int): bool =
   0 < parseInt(self.db.getValue(sql"SELECT COUNT(1) FROM tags WHERE user = ?", userID))
+
+proc setNotify*(self; userID: int, interval: int) =
+  self.db.exec(sql"UPDATE users SET notify = ? WHERE id = ?", interval, userID)
 
 proc me*(self; userID: int): string =
   let t = newUnicodeTable()
@@ -124,6 +147,21 @@ proc userNameTags*(self; userName: string): seq[(string, int)] = # TODO: fix pri
 proc topTags*(self): seq[string] =
   for row in self.db.rows(sql"SELECT tag, COUNT(1) AS C FROM tags GROUP BY tag ORDER BY C DESC LIMIT 10"):
     result.add row[0]
+
+proc getNotifications*(self): seq[(int, Locale, seq[(string, int)], string)] =
+  var t = initTable[int, (Locale, seq[(string, int)], string)]()
+  for row in self.db.rows(SELECT_NOTIFICATIONS):
+    var a = t.getOrDefault(row[0].parseInt)
+    a[0] = row[1].parseEnum(Ru)
+    a[1].add (row[2], row[3].parseInt())
+    a[2] = row[4]
+    t[row[0].parseInt] = a
+
+  for (k, v) in t.pairs:
+    result.add (k, v[0], v[1], v[2])
+
+proc setLast*(self; userID: int, datetime: string) =
+  self.db.exec(sql"UPDATE users SET last = datetime(?) WHERE id = ?", datetime, userID)
 
 proc toRow(x: InstantRow): seq[string] =
   for i in 0..<len(x):
