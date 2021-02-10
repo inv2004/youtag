@@ -23,7 +23,8 @@ let BOT_COMMANDS = @[
   BotCommand(command: "me", description: "Tags on me"),
   BotCommand(command: "my", description: "My tags"),
   BotCommand(command: "id", description: "Id for user (after message forward)"),
-  BotCommand(command: "top", description: "Top tags/users")
+  BotCommand(command: "top", description: "Top tags/users"),
+  BotCommand(command: "lang", description: "Switch language"),
 ]
 
 type
@@ -142,11 +143,28 @@ proc convInterval(str: string): int =
   else:
     raise newException(ValueError, "Error: Inteval can be 1m, 1h or 1d")
 
+proc genLangKeyboard(user: storage.User): InlineKeyboardMarkup =
+  if user.locale == Ru:
+    var btn = initInlineKeyBoardButton("English")
+    btn.callbackData = some(@["loc", $user.id, "en"].join(":"))
+    result = newInlineKeyboardMarkup(@[btn])
+  else:
+    var btn = initInlineKeyBoardButton("Русский")
+    btn.callbackData = some(@["loc", $user.id, "ru"].join(":"))
+    result = newInlineKeyboardMarkup(@[btn])
+
 proc processCmd(b: TeleBot, ft: Bot, orig: Message, user: storage.User, cmd: string) {.async.} =
   case cmd:
   of "/start":
     ft.db.setUser(user, true)
-    await b.reply(orig, locale.title & "\n\n" & hello[user.locale])
+
+    discard await b.sendMessage(orig.chat.id, locale.title & "\n\n" & hello[user.locale],
+                          parseMode = "markdown",
+                          disableNotification = true,
+                          replyToMessageId = orig.messageId,
+                          replyMarkup = genLangKeyboard(user)
+                          )
+
     await checkOnStart(b, ft, orig, user)
   of "/help": await b.reply(orig, help[user.locale])
   of "/on":
@@ -158,6 +176,10 @@ proc processCmd(b: TeleBot, ft: Bot, orig: Message, user: storage.User, cmd: str
   of "/me": await b.reply(orig, ft.db.me(user.id))
   of "/my": await b.reply(orig, ft.db.my(user.id))
   of "/id": await b.reply(orig, idUsage[user.locale])
+  of "/lang en", "/lang ru":
+    let locale = cmd[6..^1].parseEnum(Ru)
+    ft.db.setLocale(user.id, locale)
+    await b.reply(orig, localeSwitch[locale])
   of "/stop": await b.reply(orig, stopped[user.locale])
   elif cmd.startsWith("/top"): await b.reply(orig, top[user.locale])
   elif cmd.startsWith("/id @"): await b.replyTags(orig, user, ft.db.userNameTags(cmd[5..^1]))
@@ -281,16 +303,29 @@ proc main() =
         for x in markup.inlineKeyboard.mitems:
           x.keepItIf(it.callbackData.get != data)
         discard await b.editMessageReplyMarkup($msg.chat.id, msg.messageId, "", markup)
+      elif fs[0] == "loc":
+        let user = storage.User(id: fs[1].parseInt(), locale: fs[2].parseEnum(Ru))
+        ft.db.setLocale(user.id, user.locale)
+        debug msg.text.get
+        try:
+          discard await b.editMessageText(hello[user.locale], $msg.chat.id, msg.messageId, replyMarkup = genLangKeyboard(user))
+        except IOError:
+          if getCurrentExceptionMsg() != "Bad Request: message is not modified":
+            raise getCurrentException()
 
       return false
     if not u.message.isSome:
       warn "not a message"
       return false
     let msg = u.message.get
-    let user = storage.User(
-      id: msg.fromUser.get().id,
+
+    let id = msg.fromUser.get().id
+    let locale = ft.db.getLocale(id, msg.fromUser.get().languageCode.get("ru").parseEnum(Ru))
+
+    var user = storage.User(
+      id: id,
       username: msg.fromUser.get().username,
-      locale: msg.fromUser.get().languageCode.get("ru").parseEnum(Ru)
+      locale: locale
     )
     debug "User: ", user
 

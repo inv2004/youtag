@@ -62,6 +62,7 @@ Forward message from any user and add space- or comma-separated tags in text.
 /top          - top tags and users
 /top #[tag]   - top user's with the tag
 /top @[user]  - top tag's for the user
+/lang [en|ru] - switch language
 
 """,
   Ru: """
@@ -78,6 +79,7 @@ Forward message from any user and add space- or comma-separated tags in text.
 /top          - top тегов и их пользователей
 /top #[tag]   - top пользователей по тегу
 /top @[user]  - top тегов по пользователю
+/lang [en|ru] - переключить язык
 
 """
 }.toTable
@@ -157,3 +159,7 @@ const offNote* = {
   Ru: "Вы отписались от нотификации"
 }.toTable
 
+const localeSwitch* = {
+  En: "Language switched into English",
+  Ru: "Язык переключен на Русский"
+}.toTable

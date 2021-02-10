@@ -7,10 +7,13 @@ import strutils
 import locale
 import sequtils
 import tables
+import strutils
 
 const FILE = "db/db.db"
 const DB_NAME = "youtag"
 const NOW = "now"
+
+const DEF_NOTIFY=60
 
 const INIT_SQL = @[
   sql"""
@@ -83,10 +86,9 @@ proc newDB*(init = false): DB =
   DB(db: db)
 
 proc setUser*(self; user: User, active: bool) =
-  # if user.username.isSome:
   try:
     if active:
-      self.db.exec(REPLACE_USER_SQL, user.id, user.username.get(""), user.locale, 1, 0, NOW, NOW)
+      self.db.exec(REPLACE_USER_SQL, user.id, user.username.get(""), user.locale, 1, DEF_NOTIFY, NOW, NOW)
     else:
       self.db.exec(INSERT_USER_SQL, user.id, user.username.get(""), user.locale, 0, 0, NOW, NOW)
   except DbError:
@@ -162,6 +164,13 @@ proc getNotifications*(self): seq[(int, Locale, seq[(string, int)], string)] =
 
 proc setLast*(self; userID: int, datetime: string) =
   self.db.exec(sql"UPDATE users SET last = datetime(?) WHERE id = ?", datetime, userID)
+
+proc getLocale*(self; userID: int, default: Locale): Locale =
+  let locale = self.db.getValue(sql"SELECT locale from users WHERE id = ?", userID)
+  locale.parseEnum(default)
+
+proc setLocale*(self; userID: int, locale: Locale) =
+  self.db.exec(sql"UPDATE users SET locale = ? WHERE id = ?", locale, userID)
 
 proc toRow(x: InstantRow): seq[string] =
   for i in 0..<len(x):
