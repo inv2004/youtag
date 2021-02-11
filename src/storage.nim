@@ -108,7 +108,7 @@ proc setTag*(self; setterID: int, user: User, tags: seq[string]) =
 
   for t in tags:
     try:
-      discard self.db.insertID(INSERT_TAG_SQL, setterID, user.id, t, NOW)
+      discard self.db.insertID(INSERT_TAG_SQL, setterID, user.id, t.toLower(), NOW)
     except DbError:
       warn "set failed: ", getCurrentExceptionMsg()
 
