@@ -347,7 +347,12 @@ proc main() =
   info("started")
 
   bot.onUpdate(updateHandler)
-  bot.poll(timeout=300)
+
+  while true:
+    try:
+      bot.poll(timeout=300)
+    except:
+      error getCurrentExceptionMsg()
 
 when isMainModule:
   main()
