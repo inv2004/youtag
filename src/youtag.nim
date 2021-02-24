@@ -12,7 +12,7 @@ const API_KEY = slurp("telegram.key")
 
 const MSG_TIMEOUT = 900
 const BTNS_TIMEOUT = 30 * 1000
-const BTNS_ROW_SIZE = 5
+const BTNS_ROW_SIZE = 2
 
 const NOTIFY_DELAY = 60 * 1000
 
