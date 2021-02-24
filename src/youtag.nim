@@ -202,7 +202,7 @@ proc showTopButtons30S(b: Telebot, ft: Bot, orig: Message, entity: CacheEntity, 
   let setter = orig.fromUser.get().id
   let fID = entity.f.get.id
 
-  var btns = newSeq[seq[InlineKeyboardButton]](5)
+  var btns = newSeq[seq[InlineKeyboardButton]](10 div BTNS_ROW_SIZE)
   for i, tt in ft.db.topTags():
     var b = initInlineKeyBoardButton($(i+1) & ". " & tt)
     b.callbackData = some(@["set",$setter,$fID,tt].join(":"))
