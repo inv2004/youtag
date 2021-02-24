@@ -122,7 +122,7 @@ proc me*(self; userID: int): string =
   let t = newUnicodeTable()
   t.separateRows = false
   t.setHeaders @["tag", "count"]
-  for row in self.db.rows(sql"SELECT tag, COUNT(1) FROM tags WHERE user = ? GROUP BY tag", userID):
+  for row in self.db.rows(sql"SELECT tag, COUNT(1) AS C FROM tags WHERE user = ? GROUP BY tag ORDER BY C DESC, tag", userID):
     t.addRow @[row[0], row[1]]
   return "<pre>" & t.render() & "</pre>"
 
@@ -130,7 +130,7 @@ proc my*(self; userID: int): string =
   for row in self.db.rows(sql"""SELECT IFNULL(users.username, tags.user), GROUP_CONCAT(tag, ", ")
   FROM tags
   LEFT OUTER JOIN users ON tags.user = users.id
-  WHERE setter = ? GROUP BY user""",
+  WHERE setter = ? GROUP BY user ORDER BY user""",
       userID):
     result.add row[0] & ": " & row[1] & "\n"
 
