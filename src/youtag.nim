@@ -180,8 +180,9 @@ proc processCmd(b: TeleBot, ft: Bot, orig: Message, user: storage.User, cmd: str
     let locale = cmd[6..^1].parseEnum(Ru)
     ft.db.setLocale(user.id, locale)
     await b.reply(orig, localeSwitch[locale])
+  of "/top": await b.reply(orig, ft.db.top())
   of "/stop": await b.reply(orig, stopped[user.locale])
-  elif cmd.startsWith("/top"): await b.reply(orig, top[user.locale])
+  elif cmd.startsWith("/top"): await b.reply(orig, topInfo[user.locale])
   elif cmd.startsWith("/id @"): await b.replyTags(orig, user, ft.db.userNameTags(cmd[5..^1]))
   elif cmd.startsWith("/on "):
     ft.db.setNotify(user.id, convInterval(cmd[4..^1]))

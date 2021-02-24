@@ -59,7 +59,7 @@ Forward message from any user and add space- or comma-separated tags in text.
 /my           - show tags set by you
 /id           - show tags you set for user (use /id in forwarded message only)
 /id @username - show tags you set for the username
-/top          - top tags and users
+/top          - top tags
 /top #[tag]   - top user's with the tag
 /top @[user]  - top tag's for the user
 /lang [en|ru] - switch language
@@ -76,7 +76,7 @@ Forward message from any user and add space- or comma-separated tags in text.
 /my           - показать теги, которые установили вы
 /id           - показать теги, которые вы поставили пользователю (работает только при пересылке сообщения от кого-то)
 /id @username - показать теги, которые вы поставили этому пользователю
-/top          - top тегов и их пользователей
+/top          - top тегов
 /top #[tag]   - top пользователей по тегу
 /top @[user]  - top тегов по пользователю
 /lang [en|ru] - переключить язык
@@ -89,7 +89,7 @@ const stopped* = {
   Ru: "Спасибо, приходите ещё"
 }.toTable
 
-const top* = {
+const topInfo* = {
   En: "This command is temporary disabled due to the toxicity of IT community",
   Ru: "Команда временно отключена для избежания токсичности"
 }.toTable

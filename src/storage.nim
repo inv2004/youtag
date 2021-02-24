@@ -147,8 +147,15 @@ proc userNameTags*(self; userName: string): seq[(string, int)] = # TODO: fix pri
     result.add (row[0], row[1].parseInt())
 
 proc topTags*(self): seq[string] =
-  for row in self.db.rows(sql"SELECT tag, COUNT(1) AS C FROM tags GROUP BY tag ORDER BY C DESC LIMIT 10"):
+  for row in self.db.rows(sql"SELECT tag, COUNT(1) AS C FROM tags GROUP BY tag ORDER BY C DESC, tag LIMIT 10"):
     result.add row[0]
+
+proc top*(self): string =
+  let t = newUnicodeTable()
+  t.setHeaders @["tag", "count"]
+  for row in self.db.rows(sql"SELECT tag, COUNT(1) AS C FROM tags GROUP BY tag ORDER BY C DESC, tag LIMIT 10"):
+    t.addRow @[row[0], row[1]]
+  return "<pre>" & t.render() & "</pre>"
 
 proc getNotifications*(self): seq[(int, Locale, seq[(string, int)], string)] =
   var t = initTable[int, (Locale, seq[(string, int)], string)]()
