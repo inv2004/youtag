@@ -120,6 +120,7 @@ proc setNotify*(self; userID: int, interval: int) =
 
 proc me*(self; userID: int): string =
   let t = newUnicodeTable()
+  t.separateRows = false
   t.setHeaders @["tag", "count"]
   for row in self.db.rows(sql"SELECT tag, COUNT(1) FROM tags WHERE user = ? GROUP BY tag", userID):
     t.addRow @[row[0], row[1]]
@@ -152,6 +153,7 @@ proc topTags*(self): seq[string] =
 
 proc top*(self): string =
   let t = newUnicodeTable()
+  t.separateRows = false
   t.setHeaders @["tag", "count"]
   for row in self.db.rows(sql"SELECT tag, COUNT(1) AS C FROM tags GROUP BY tag ORDER BY C DESC, tag LIMIT 10"):
     t.addRow @[row[0], row[1]]
