@@ -18,7 +18,6 @@ jobs:
       - uses: jiro4989/setup-nim-action@v1
       # - run: nimble test -y
       - run: echo -ne "${{ secrets.TELEGRAM_KEY }}" > src/telegram.key
-      - run: echo -ne "${{ secrets.TELEGRAM_KEY }}"
       - run: nimble -d:release -y build
       - uses: appleboy/scp-action@master
         with:
